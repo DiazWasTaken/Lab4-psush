@@ -34,7 +34,7 @@ tar:
 	tar cvfa bin_file_${LOGNAME}.tar.gz *.[ch] [mM]akefile
 
 git:
-	git add Makefile psush.c 
+	git add Makefile $(PROG1).c $(PROG2).c $(PROG2).h
 	git commit -m "end of work submit"
 	git push 
 
