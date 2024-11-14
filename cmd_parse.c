@@ -8,7 +8,11 @@
 
 #include "cmd_parse.h"
 
-#define PROMPT_LEN 100
+#define PROMPT_LEN 2000
+
+// / new change im making my comments either blocks or have the " /"
+// / my #defines
+#define HIST 10
 
 // I have this a global so that I don't have to pass it to every
 // function where I might want to use it. Yes, I know global variables
@@ -26,14 +30,27 @@ process_user_input_simple(void)
     int cmd_count = 0;
     char prompt[PROMPT_LEN] = {'\0'};
 
+    /*
+    variables I have deemed neccessary
+    */
+    char cwd_buf[1000] = {'\0'};
+    char sys_name_buf[71] = {'\0'};
+
     for ( ; ; ) {
         // Set up a cool user prompt.
         // test to see of stdout is a terminal device (a tty)
-        sprintf(prompt, " %s <put directory here> \n%s<put @system name here> # "
+        /*
+        before this first print I need to find the current working directory and the system name.
+        */
+       getcwd(cwd_buf, 100);
+       gethostname(sys_name_buf, 71);
+       
+
+        sprintf(prompt, " %s %s\n %s %s # "
                 , PROMPT_STR
-                //, current working directory
+                , cwd_buf
                 , getenv("LOGNAME")
-                //, fully qualified hostname
+                , sys_name_buf
             );
         fputs(prompt, stdout);
         memset(str, 0, MAX_STR_LEN);
@@ -164,6 +181,11 @@ exec_commands( cmd_list_t *cmds )
                 // Is there an environment variable, somewhere, that contains
                 // the HOME directory that could be used as an argument to
                 // the chdir() fucntion?
+                /* 
+                there is and i believe it is the $HOME variable
+                */
+                chdir(getenv("HOME"));
+
             }
             else {
                 // try and cd to the target directory. It would be good to check
@@ -191,6 +213,39 @@ exec_commands( cmd_list_t *cmds )
         }
         else if (0 == strcmp(cmd->cmd, HISTORY_CMD)) {
             // display the history here
+            // / doing my best o7
+            // / since im lifiting this from the slides im gonna comment this to hell
+
+            // / this sets a list of lists to place the commands into, the 1d array holds the order e.g 1-10
+            // / and the 2d array holds the actual command used
+            char *history_list[HIST] = {"\0"};
+
+            // / this just constantly "frees/removes" the last location in the list, sort of cycling the list per say
+            //free(history_list[HIST] - 1);
+            // / this is also what is causing the seg fault
+
+            /*
+            this one was a doozy
+            1. this is where the copy will end up placing what you copy
+            2. this is what you will copy into step 1
+            3. the mandatory sizing according to the memeory of what you are working with
+             for steps 2 and 1, im assuming that this takes the list from this point 
+             and places that one step down*/
+            //memmove(&(history_list[1]), &(history_list[0]), (HIST - 1) * sizeof(char *));
+
+            printf("i wont seg fault I promise\n");
+            // / for some reason the memmove gave me a segmentation fault?
+            for (int i = HIST - 2; i >= 0; i--) {
+                history_list[i+1] = history_list[i];
+            }
+            history_list[0] = strdup(cmd->cmd);
+
+            printf("i wont seg fault I promise\n");
+            for (int i = 0; i <= HIST -1; i++){
+                printf(" %d: %s \n", i, history_list[i]);
+            }
+
+
         }
         else {
             // A single command to create and exec
