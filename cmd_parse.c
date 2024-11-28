@@ -24,15 +24,11 @@
 // are frowned upon, but there are a couple useful uses for them.
 // This is one.
 unsigned short is_verbose = 0;
+pid_t child_pid = 0; // Track the currently running child process
 
 char *history_list[HIST] = {NULL};
 int history_count = 0; // Number of valid commands added to history
 
-// Signal handler for SIGINT
-void handle_sigint(int sig) {
-    printf("\nIt takes more than that to kill me\n");
-    fflush(stdout); // Ensure the message is displayed immediately
-}
 
 int 
 process_user_input_simple(void)
