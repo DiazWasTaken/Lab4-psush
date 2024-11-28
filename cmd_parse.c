@@ -5,6 +5,9 @@
 #include <unistd.h>
 #include <stdlib.h>
 #include <sys/param.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <fcntl.h>
 
 #include "cmd_parse.h"
 
@@ -14,11 +17,15 @@
 // / my #defines
 #define HIST 10
 
+
 // I have this a global so that I don't have to pass it to every
 // function where I might want to use it. Yes, I know global variables
 // are frowned upon, but there are a couple useful uses for them.
 // This is one.
 unsigned short is_verbose = 0;
+
+char *history_list[HIST] = {NULL};
+int history_count = 0; // Number of valid commands added to history
 
 int 
 process_user_input_simple(void)
@@ -35,6 +42,8 @@ process_user_input_simple(void)
     */
     char cwd_buf[1000] = {'\0'};
     char sys_name_buf[71] = {'\0'};
+
+    memset(history_list, 0, sizeof(history_list));
 
     for ( ; ; ) {
         // Set up a cool user prompt.
@@ -78,10 +87,27 @@ process_user_input_simple(void)
         if (strcmp(str, BYE_CMD) == 0) {
             // Pickup your toys and go home. I just hope there are not
             // any memory leaks. ;-)
+
+            //once we close the shell using the bye command we need to make sure any lists are deleted and properly killed in the back alley
+
+            
+        //this handles the history list clean up
+        for (int i = 0; i < HIST; i++) {
+            if (history_list[i] != NULL) {
+                free(history_list[i]);
+                history_list[i] = NULL;
+            }
+        }
             break;
         }
 
         // I put the update of the history of command in here.
+        if(strcmp(str, HISTORY_CMD) != 0){
+                free(history_list[HIST - 1]);
+
+                memmove(&(history_list[1]), &(history_list[0]), (HIST - 1) * sizeof(char*));
+                history_list[0] = strdup(str);
+        }
 
         // Basic commands are pipe delimited.
         // This is really for Stage 2.
@@ -210,37 +236,31 @@ exec_commands( cmd_list_t *cmds )
             // insert code here
             // insert code here
             // Is that an echo?
+
+            param_t *param = cmd->param_list;
+
+            if (param == NULL) {
+                // If no arguments, print a blank line
+                printf("\n");
+                return;
+            }
+
+            // Print all parameters
+            while (param != NULL) {
+                printf("%s", param->param);
+                if (param->next != NULL) {
+                    printf(" ");
+                }
+                param = param->next;
+            }
+            printf("\n"); // End with a newline
+            return;
         }
         else if (0 == strcmp(cmd->cmd, HISTORY_CMD)) {
             // display the history here
             // / doing my best o7
             // / since im lifiting this from the slides im gonna comment this to hell
 
-            // / this sets a list of lists to place the commands into, the 1d array holds the order e.g 1-10
-            // / and the 2d array holds the actual command used
-            char *history_list[HIST] = {"\0"};
-
-            // / this just constantly "frees/removes" the last location in the list, sort of cycling the list per say
-            //free(history_list[HIST] - 1);
-            // / this is also what is causing the seg fault
-
-            /*
-            this one was a doozy
-            1. this is where the copy will end up placing what you copy
-            2. this is what you will copy into step 1
-            3. the mandatory sizing according to the memeory of what you are working with
-             for steps 2 and 1, im assuming that this takes the list from this point 
-             and places that one step down*/
-            //memmove(&(history_list[1]), &(history_list[0]), (HIST - 1) * sizeof(char *));
-
-            printf("i wont seg fault I promise\n");
-            // / for some reason the memmove gave me a segmentation fault?
-            for (int i = HIST - 2; i >= 0; i--) {
-                history_list[i+1] = history_list[i];
-            }
-            history_list[0] = strdup(cmd->cmd);
-
-            printf("i wont seg fault I promise\n");
             for (int i = 0; i <= HIST -1; i++){
                 printf(" %d: %s \n", i, history_list[i]);
             }
@@ -250,7 +270,65 @@ exec_commands( cmd_list_t *cmds )
         else {
             // A single command to create and exec
             // If you really do things correctly, you don't need a special call
-            // for a single command, as distinguished from multiple commands.
+            // for a single command, as distinguished from multiple commands.   
+            pid_t pid = fork();
+            int argc = 0;
+            param_t *param = NULL;
+            char *argv[argc];
+
+                if (pid < 0) {
+                    perror("fork failed");
+                    exit(EXIT_FAILURE);
+                }
+                else if (pid == 0) { // Child process
+                    // Handle redirection
+                    if (cmd->input_src == REDIRECT_FILE && cmd->input_file_name != NULL) {
+                        int fd = open(cmd->input_file_name, O_RDONLY);
+                        if (fd < 0) {
+                            perror("Input redirection failed");
+                            exit(EXIT_FAILURE);
+                        }
+                        dup2(fd, STDIN_FILENO);
+                        close(fd);
+                    }
+
+                    if (cmd->output_dest == REDIRECT_FILE && cmd->output_file_name != NULL) {
+                        int fd = open(cmd->output_file_name, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+                        if (fd < 0) {
+                            perror("Output redirection failed");
+                            exit(EXIT_FAILURE);
+                        }
+                        dup2(fd, STDOUT_FILENO);
+                        close(fd);
+                    }
+
+                    // Prepare argv array
+                    argc = cmd->param_count + 2; // +2 for cmd->cmd and NULL
+                    argv[0] = cmd->cmd;
+
+                    param = cmd->param_list;
+                    for (int i = 1; i < argc - 1; i++) {
+                        argv[i] = param->param;
+                        param = param->next;
+                    }
+                    argv[argc - 1] = NULL;
+
+                    // Execute the command
+                    execvp(cmd->cmd, argv);
+
+                    perror("execvp failed");
+                    exit(EXIT_FAILURE);
+                }
+                else { // Parent process
+                    int status;
+                    do {
+                        pid_t wpid = waitpid(pid, &status, WUNTRACED);
+                        if (wpid == -1) {
+                            perror("waitpid failed");
+                            exit(EXIT_FAILURE);
+                        }
+                    } while (!WIFEXITED(status) && !WIFSIGNALED(status));
+                }
         }
     }
     else {
@@ -266,6 +344,22 @@ free_list(cmd_list_t *cmd_list)
     // Proof left to the student.
     // You thought I was going to do this for you! HA! You get
     // the enjoyment of doing it for yourself.
+    cmd_t *current = cmd_list->head;
+    cmd_t *next = NULL;
+
+    //this was not enjoyable
+    if (cmd_list == NULL) {
+        return;
+    }
+
+    while (current != NULL) {
+        next = current->next;
+        free_cmd(current);
+        current = next;
+    }
+
+    // Free the cmd_list structure itself
+    free(cmd_list);
 }
 
 void
@@ -285,6 +379,49 @@ free_cmd (cmd_t *cmd)
     // Proof left to the student.
     // Yep, on yer own.
     // I beleive in you.
+    param_t *param = NULL;
+
+    if (cmd == NULL) {
+        return;
+    }
+
+    // Free the raw_cmd string
+    if (cmd->raw_cmd != NULL) {
+        free(cmd->raw_cmd);
+        cmd->raw_cmd = NULL;
+    }
+
+    // Free the cmd string
+    if (cmd->cmd != NULL) {
+        free(cmd->cmd);
+        cmd->cmd = NULL;
+    }
+
+    // Free the input file name
+    if (cmd->input_file_name != NULL) {
+        free(cmd->input_file_name);
+        cmd->input_file_name = NULL;
+    }
+
+    // Free the output file name
+    if (cmd->output_file_name != NULL) {
+        free(cmd->output_file_name);
+        cmd->output_file_name = NULL;
+    }
+
+    // Free the parameter list
+    param = cmd->param_list;
+    while (param != NULL) {
+        param_t *next_param = param->next;
+        if (param->param != NULL) {
+            free(param->param);
+        }
+        free(param);
+        param = next_param;
+    }
+
+    // Free the cmd structure itself
+    free(cmd);
 }
 
 // Oooooo, this is nice. Show the fully parsed command line in a nice
