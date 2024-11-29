@@ -23,14 +23,19 @@ program would be actual asinine
 */
 extern unsigned short is_verbose;
 
+void handle_sigint(int sig);
+
 // Signal handler for SIGINT
 void handle_sigint(int sig) {
+    
+    char cwd_buf[1000] = {'\0'};
+    char sys_name_buf[71] = {'\0'};
+
+    (void)sig;
     // Print the witty message
     printf("\nIt takes more than that to kill me\n");
 
     // Re-display the prompt
-    char cwd_buf[1000] = {'\0'};
-    char sys_name_buf[71] = {'\0'};
     getcwd(cwd_buf, sizeof(cwd_buf));
     gethostname(sys_name_buf, sizeof(sys_name_buf));
 
@@ -41,17 +46,22 @@ void handle_sigint(int sig) {
 }
 
 int main(int argc, char *argv[]) {
+    
+    int ret = 0;
     // Set up the SIGINT handler
     struct sigaction sa;
     sa.sa_handler = handle_sigint;  // Assign the handler function
     sa.sa_flags = SA_RESTART;      // Restart interrupted system calls
+    
+    
+    
     sigaction(SIGINT, &sa, NULL);
 
     // Parse command-line arguments
     simple_argv(argc, argv);
 
     // Start processing user input (the main shell loop)
-    int ret = process_user_input_simple();
+    ret = process_user_input_simple();
 
     return ret;
 }

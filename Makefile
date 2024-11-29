@@ -16,16 +16,16 @@ PROGS = $(PROG1)
 all: $(PROGS)
 
 $(PROG1): $(PROG1).o $(PROG2).o
-	$(CC) $(CFLAGS) -o $@ $^ -lmd
+	$(CC) $(CFLAGS) -o $@ $^ 
 
 $(PROG1).o: $(PROG1).c
-	$(CC) $(CFLAGS) -c $< -lmd
+	$(CC) $(CFLAGS) -c $< 
 
 $(PROG2): $(PROG2).o
-	$(CC) $(CFLAGS) -o $@ $^ -lmd
+	$(CC) $(CFLAGS) -o $@ $^ 
 
 $(PROG2).o: $(PROG2).c $(PROG2).h
-	$(CC) $(CFLAGS) -c $< -lmd
+	$(CC) $(CFLAGS) -c $< 
 
 clean cls:
 	rm -f $(PROGS) *.o *~ \#*
