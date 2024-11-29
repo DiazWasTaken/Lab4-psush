@@ -200,48 +200,50 @@ void exec_commands(cmd_list_t *cmds) {
     int is_last = 0;  // Flag for detecting the last command in the pipeline
 
     while (cmd != NULL) {
-        // Check if this is the last command in the pipeline
-        is_last = (cmd->next == NULL);
+        is_last = (cmd->next == NULL); // Check if it's the last command
 
-        // Handle built-in commands
-        if (cmd->cmd && strcmp(cmd->cmd, CWD_CMD) == 0) {
-            char cwd[MAXPATHLEN];
-            if (getcwd(cwd, sizeof(cwd)) != NULL) {
-                printf("cwd: %s\n", cwd);
-            } else {
-                perror("getcwd failed");
-            }
-            return; // Built-in commands don't need further processing
-        } else if (cmd->cmd && strcmp(cmd->cmd, CD_CMD) == 0) {
-            if (cmd->param_count == 0) {
-                // Change to home directory
-                if (chdir(getenv("HOME")) != 0) {
-                    perror("cd failed");
+        // Check if the command is a built-in
+        if (cmd->cmd && (strcmp(cmd->cmd, CWD_CMD) == 0 ||
+                         strcmp(cmd->cmd, CD_CMD) == 0 ||
+                         strcmp(cmd->cmd, BYE_CMD) == 0 ||
+                         strcmp(cmd->cmd, ECHO_CMD) == 0 ||
+                         strcmp(cmd->cmd, HISTORY_CMD) == 0)) {
+            // Execute the built-in command
+            if (strcmp(cmd->cmd, CWD_CMD) == 0) {
+                char cwd[MAXPATHLEN];
+                if (getcwd(cwd, sizeof(cwd)) != NULL) {
+                    printf("cwd: %s\n", cwd);
+                } else {
+                    perror("getcwd failed");
                 }
-            } else {
-                // Change to specified directory
-                if (chdir(cmd->param_list->param) != 0) {
-                    perror("cd failed");
+            } else if (strcmp(cmd->cmd, CD_CMD) == 0) {
+                if (cmd->param_count == 0) {
+                    if (chdir(getenv("HOME")) != 0) {
+                        perror("cd failed");
+                    }
+                } else {
+                    if (chdir(cmd->param_list->param) != 0) {
+                        perror("cd failed");
+                    }
+                }
+            } else if (strcmp(cmd->cmd, BYE_CMD) == 0) {
+                exit(EXIT_SUCCESS); // Exit the shell
+            } else if (strcmp(cmd->cmd, ECHO_CMD) == 0) {
+                param_t *param = cmd->param_list;
+                while (param) {
+                    printf("%s ", param->param);
+                    param = param->next;
+                }
+                printf("\n");
+            } else if (strcmp(cmd->cmd, HISTORY_CMD) == 0) {
+                for (int i = 0; i < HIST && history_list[i]; i++) {
+                    printf("%d: %s\n", i + 1, history_list[i]);
                 }
             }
-            return;
-        } else if (cmd->cmd && strcmp(cmd->cmd, BYE_CMD) == 0) {
-            // Exit the shell
-            exit(EXIT_SUCCESS);
-        } else if (cmd->cmd && strcmp(cmd->cmd, ECHO_CMD) == 0) {
-            // Echo command
-            param_t *param = cmd->param_list;
-            while (param) {
-                printf("%s ", param->param);
-                param = param->next;
-            }
-            printf("\n");
-            return;
-        } else if (cmd->cmd && strcmp(cmd->cmd, HISTORY_CMD) == 0) {
-            for (int i = 0; i < HIST && history_list[i]; i++) {
-                printf("%d: %s\n", i + 1, history_list[i]);
-            }
-            return;
+
+            // Skip forking or piping for built-ins
+            cmd = cmd->next;
+            continue;
         }
 
         // Create a pipe unless it's the last command
@@ -257,60 +259,40 @@ void exec_commands(cmd_list_t *cmds) {
             exit(EXIT_FAILURE);
         } else if (pid == 0) { // Child process
             // Handle input redirection
-            if (cmd->input_src == REDIRECT_FILE && cmd->input_file_name != NULL) {
-                int fd = open(cmd->input_file_name, O_RDONLY);
-                if (fd < 0) {
-                    perror("Input redirection failed");
-                    exit(EXIT_FAILURE);
-                }
-                dup2(fd, STDIN_FILENO);
-                close(fd);
-            } else if (p_trail != -1) {
-                // Redirect input to read from the previous command's pipe
+            if (p_trail != -1) {
                 dup2(p_trail, STDIN_FILENO);
+                close(p_trail);
             }
 
             // Handle output redirection
-            if (cmd->output_dest == REDIRECT_FILE && cmd->output_file_name != NULL) {
-                int fd = open(cmd->output_file_name, O_WRONLY | O_CREAT | O_TRUNC, 0644);
-                if (fd < 0) {
-                    perror("Output redirection failed");
-                    exit(EXIT_FAILURE);
-                }
-                dup2(fd, STDOUT_FILENO);
-                close(fd);
-            } else if (!is_last) {
-                // Redirect output to write to the current pipe
-                dup2(pipe_fd[1], STDOUT_FILENO);
-            }
-
-            // Close unnecessary file descriptors in the child
-            if (p_trail != -1) {
-                close(p_trail);
-            }
             if (!is_last) {
-                close(pipe_fd[0]);
+                dup2(pipe_fd[1], STDOUT_FILENO);
                 close(pipe_fd[1]);
             }
 
-            // Prepare the argument list
+            // Close unused pipe ends in the child process
+            if (!is_last) {
+                close(pipe_fd[0]);
+            }
+
+            // Prepare arguments for execvp
             int argc = cmd->param_count + 2; // +1 for cmd->cmd, +1 for NULL
-            char *argv[MAX_STR_LEN]; // Use a fixed size for argv
+            char *argv[argc];
             argv[0] = cmd->cmd;
+
             param_t *param = cmd->param_list;
-            int i;
-            for (i = 1; i < argc - 1; i++) {
+            for (int i = 1; i < argc - 1; i++) {
                 argv[i] = param->param;
                 param = param->next;
             }
-            argv[i] = NULL; // Null-terminate the argument list
+            argv[argc - 1] = NULL;
 
             // Execute the command
             execvp(cmd->cmd, argv);
             perror("execvp failed");
             exit(EXIT_FAILURE);
         } else { // Parent process
-            // Close file descriptors no longer needed by the parent
+            // Close file descriptors no longer needed in the parent
             if (p_trail != -1) {
                 close(p_trail);
             }

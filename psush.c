@@ -46,22 +46,25 @@ void handle_sigint(int sig) {
 }
 
 int main(int argc, char *argv[]) {
-    
-    int ret = 0;
+    struct sigaction sa; 
+    int ret;             
+
     // Set up the SIGINT handler
-    struct sigaction sa;
-    sa.sa_handler = handle_sigint;  // Assign the handler function
-    sa.sa_flags = SA_RESTART;      // Restart interrupted system calls
-    
-    
-    
-    sigaction(SIGINT, &sa, NULL);
+    memset(&sa, 0, sizeof(sa));   
+    sa.sa_handler = handle_sigint; 
+    sa.sa_flags = SA_RESTART;       
+    sigemptyset(&sa.sa_mask);      
+
+    if (sigaction(SIGINT, &sa, NULL) == -1) {
+        perror("sigaction failed");
+        exit(EXIT_FAILURE);
+    }
 
     // Parse command-line arguments
     simple_argv(argc, argv);
 
     // Start processing user input (the main shell loop)
-    ret = process_user_input_simple();
+    ret = process_user_input_simple(); // Assigned value after declaration
 
     return ret;
 }
